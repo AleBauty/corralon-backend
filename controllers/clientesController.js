@@ -28,7 +28,7 @@ const obtener = async (req, res) => {
 
 const crear = async (req, res) => {
   try {
-    const { dni, nombre_apellido, telefono, email, domicilio, tipo, limite_credito } = req.body;
+    const { dni, nombre_apellido, telefono, email, domicilio, tipo, limite_credito, codigo_postal, localidad } = req.body;
 
     const existe = await pool.query('SELECT dni FROM clientes WHERE dni = $1', [dni]);
     if (existe.rows.length > 0)
@@ -39,10 +39,10 @@ const crear = async (req, res) => {
       : 50000;
 
     const result = await pool.query(
-      `INSERT INTO clientes (dni, nombre_apellido, telefono, email, domicilio, tipo, limite_credito)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      `INSERT INTO clientes (dni, nombre_apellido, telefono, email, domicilio, tipo, limite_credito, codigo_postal, localidad)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [dni, nombre_apellido, telefono ?? null, email ?? null, domicilio ?? null,
-       tipo ?? 'Normal', limiteVal]
+       tipo ?? 'Normal', limiteVal, codigo_postal ?? null, localidad ?? null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -53,7 +53,7 @@ const crear = async (req, res) => {
 const modificar = async (req, res) => {
   try {
     const { dni } = req.params;
-    const { nombre_apellido, telefono, email, domicilio, tipo, limite_credito } = req.body;
+    const { nombre_apellido, telefono, email, domicilio, tipo, limite_credito, codigo_postal, localidad } = req.body;
 
     const result = await pool.query(
       `UPDATE clientes SET
@@ -62,11 +62,13 @@ const modificar = async (req, res) => {
         email           = COALESCE($3, email),
         domicilio       = COALESCE($4, domicilio),
         tipo            = COALESCE($5, tipo),
-        limite_credito  = CASE WHEN $6::numeric IS NOT NULL THEN $6::numeric ELSE limite_credito END
-       WHERE dni = $7 RETURNING *`,
+        limite_credito  = CASE WHEN $6::numeric IS NOT NULL THEN $6::numeric ELSE limite_credito END,
+        codigo_postal   = COALESCE($7, codigo_postal),
+        localidad       = COALESCE($8, localidad)
+       WHERE dni = $9 RETURNING *`,
       [nombre_apellido, telefono, email, domicilio, tipo,
        limite_credito != null ? parseFloat(limite_credito) : null,
-       dni]
+       codigo_postal ?? null, localidad ?? null, dni]
     );
     if (result.rows.length === 0)
       return res.status(404).json({ error: 'Cliente no encontrado' });
