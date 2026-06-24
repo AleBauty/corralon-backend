@@ -164,7 +164,13 @@ const entregar = async (req, res) => {
 
     const vehiculoId = ventaRes.rows[0].vehiculo_id;
     if (vehiculoId) {
-      await client.query("UPDATE vehiculos SET estado = 'Disponible' WHERE id = $1", [vehiculoId]);
+      const otras = await client.query(
+        `SELECT COUNT(*) FROM ventas WHERE vehiculo_id = $1 AND estado = 'Activa' AND id != $2`,
+        [vehiculoId, id]
+      );
+      if (parseInt(otras.rows[0].count) === 0) {
+        await client.query("UPDATE vehiculos SET estado = 'Disponible' WHERE id = $1", [vehiculoId]);
+      }
     }
 
     await client.query('COMMIT');
