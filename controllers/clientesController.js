@@ -78,4 +78,31 @@ const modificar = async (req, res) => {
   }
 };
 
-module.exports = { listar, obtener, crear, modificar };
+const historialCompras = async (req, res) => {
+  try {
+    const { dni } = req.params;
+    const result = await pool.query(
+      `SELECT v.id, v.fecha, v.total, v.estado, v.forma_pago_1, v.monto_pago_1,
+              v.forma_pago_2, v.monto_pago_2, v.forma_entrega, v.descuento,
+              COALESCE(
+                json_agg(
+                  json_build_object('producto', p.nombre, 'cantidad', vi.cantidad, 'subtotal', vi.subtotal)
+                  ORDER BY vi.id
+                ) FILTER (WHERE vi.id IS NOT NULL),
+                '[]'
+              ) AS items
+       FROM ventas v
+       LEFT JOIN venta_items vi ON vi.venta_id = v.id
+       LEFT JOIN productos p ON p.codigo = vi.producto_codigo
+       WHERE v.dni_cliente = $1
+       GROUP BY v.id
+       ORDER BY v.fecha DESC`,
+      [dni]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = { listar, obtener, crear, modificar, historialCompras };

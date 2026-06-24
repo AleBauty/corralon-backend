@@ -104,9 +104,18 @@ const recibir = async (req, res) => {
       const cantRecibida = rec != null ? Math.max(0, parseFloat(rec.cantidad_recibida) || 0) : parseFloat(item.cantidad);
 
       if (cantRecibida > 0) {
-        await client.query(
-          'UPDATE productos SET stock_actual = stock_actual + $1 WHERE codigo = $2',
+        const stockRes = await client.query(
+          'UPDATE productos SET stock_actual = stock_actual + $1 WHERE codigo = $2 RETURNING stock_actual',
           [cantRecibida, item.producto_codigo]
+        );
+        const stockNuevo = parseFloat(stockRes.rows[0].stock_actual);
+        await client.query(
+          `INSERT INTO movimientos_stock
+             (producto_codigo, tipo, cantidad, stock_anterior, stock_nuevo, referencia)
+           VALUES ($1, 'Ingreso', $2, $3, $4, $5)`,
+          [item.producto_codigo, cantRecibida,
+           (stockNuevo - cantRecibida).toFixed(2),
+           stockNuevo.toFixed(2), `Pedido #${id}`]
         );
       }
       if (cantRecibida < parseFloat(item.cantidad)) {

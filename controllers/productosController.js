@@ -108,16 +108,40 @@ const crear = async (req, res) => {
 };
 
 const modificar = async (req, res) => {
+  const client = await pool.connect();
   try {
     const { codigo } = req.params;
     const {
       nombre, descripcion, categoria_id, marca,
       stock_minimo,
       proveedor_principal, proveedor_secundario,
-      precio_costo, porcentaje_ganancia, unidad_medida,
+      precio_costo, porcentaje_ganancia, unidad_medida, usuario,
     } = req.body;
 
-    const result = await pool.query(
+    const current = await client.query(
+      'SELECT precio_costo, porcentaje_ganancia FROM productos WHERE codigo = $1',
+      [codigo]
+    );
+    if (!current.rows.length) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    await client.query('BEGIN');
+
+    const oldCosto    = parseFloat(current.rows[0].precio_costo);
+    const oldGanancia = parseFloat(current.rows[0].porcentaje_ganancia);
+    const newCosto    = precio_costo    != null ? parseFloat(precio_costo)    : oldCosto;
+    const newGanancia = porcentaje_ganancia != null ? parseFloat(porcentaje_ganancia) : oldGanancia;
+    const oldPV = oldCosto * (1 + oldGanancia / 100);
+    const newPV = newCosto * (1 + newGanancia / 100);
+
+    if (Math.abs(oldPV - newPV) > 0.001) {
+      await client.query(
+        `INSERT INTO historial_precios (producto_codigo, precio_anterior, precio_nuevo, usuario)
+         VALUES ($1, $2, $3, $4)`,
+        [codigo, oldPV.toFixed(2), newPV.toFixed(2), usuario ?? null]
+      );
+    }
+
+    const result = await client.query(
       `UPDATE productos SET
         nombre               = COALESCE($1,  nombre),
         descripcion          = COALESCE($2,  descripcion),
@@ -139,32 +163,84 @@ const modificar = async (req, res) => {
         codigo,
       ]
     );
-    if (result.rows.length === 0)
-      return res.status(404).json({ error: 'Producto no encontrado' });
+    await client.query('COMMIT');
     res.json(result.rows[0]);
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 };
 
-// Nuevo endpoint: incrementa el stock (no reemplaza)
 const ingresoStock = async (req, res) => {
+  const client = await pool.connect();
   try {
     const { codigo } = req.params;
-    const { cantidad } = req.body;
+    const { cantidad, usuario } = req.body;
     if (!cantidad || parseFloat(cantidad) <= 0)
       return res.status(400).json({ error: 'La cantidad debe ser mayor a 0' });
 
-    const result = await pool.query(
-      'UPDATE productos SET stock_actual = stock_actual + $1 WHERE codigo = $2 RETURNING *',
-      [parseFloat(cantidad), codigo]
+    const current = await client.query(
+      'SELECT stock_actual FROM productos WHERE codigo = $1', [codigo]
     );
-    if (result.rows.length === 0)
-      return res.status(404).json({ error: 'Producto no encontrado' });
+    if (!current.rows.length) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    await client.query('BEGIN');
+
+    const stockAnterior = parseFloat(current.rows[0].stock_actual);
+    const cantNum       = parseFloat(cantidad);
+    const stockNuevo    = stockAnterior + cantNum;
+
+    const result = await client.query(
+      'UPDATE productos SET stock_actual = $1 WHERE codigo = $2 RETURNING *',
+      [stockNuevo, codigo]
+    );
+
+    await client.query(
+      `INSERT INTO movimientos_stock
+         (producto_codigo, tipo, cantidad, stock_anterior, stock_nuevo, usuario)
+       VALUES ($1, 'Ingreso', $2, $3, $4, $5)`,
+      [codigo, cantNum, stockAnterior.toFixed(2), stockNuevo.toFixed(2), usuario ?? null]
+    );
+
+    await client.query('COMMIT');
     res.json(result.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+};
+
+const historialPrecios = async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM historial_precios WHERE producto_codigo = $1 ORDER BY fecha DESC',
+      [codigo]
+    );
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-module.exports = { listar, obtener, crear, modificar, ingresoStock, siguienteCodigo, listarCategorias };
+const movimientosStock = async (req, res) => {
+  try {
+    const { codigo } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM movimientos_stock WHERE producto_codigo = $1 ORDER BY fecha DESC LIMIT 100',
+      [codigo]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = {
+  listar, obtener, crear, modificar, ingresoStock, siguienteCodigo, listarCategorias,
+  historialPrecios, movimientosStock,
+};

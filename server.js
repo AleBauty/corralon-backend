@@ -18,6 +18,8 @@ const mantenimientoRoutes      = require('./routes/mantenimiento');
 const reportesRoutes           = require('./routes/reportes');
 const authRoutes               = require('./routes/auth');
 const egresosRoutes            = require('./routes/egresos');
+const cierreCajaRoutes         = require('./routes/cierreCaja');
+const inventarioRoutes         = require('./routes/inventario');
 
 const app = express();
 app.use(cors());
@@ -39,6 +41,8 @@ app.use('/api/mantenimiento',       mantenimientoRoutes);
 app.use('/api/reportes',            reportesRoutes);
 app.use('/api/auth',               authRoutes);
 app.use('/api/egresos',            egresosRoutes);
+app.use('/api/cierre-caja',        cierreCajaRoutes);
+app.use('/api/inventario',         inventarioRoutes);
 
 app.get('/', (req, res) => res.json({ mensaje: 'API Corralón Virgen de Punta Corral' }));
 

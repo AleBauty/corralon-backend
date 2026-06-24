@@ -61,6 +61,7 @@ const ventasPendientes = async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT v.id, v.fecha, v.total, v.direccion_entrega,
+              v.direccion_calle, v.direccion_nro, v.direccion_ciudad,
               c.nombre_apellido AS cliente, c.telefono AS cliente_telefono,
               c.dni AS cliente_dni, c.domicilio AS cliente_domicilio
        FROM ventas v
@@ -82,6 +83,7 @@ const entregasPorVehiculo = async (req, res) => {
     const { id } = req.params;
     const result = await pool.query(
       `SELECT v.id, v.fecha, v.total, v.direccion_entrega,
+              v.direccion_calle, v.direccion_nro, v.direccion_ciudad,
               c.nombre_apellido AS cliente, c.telefono AS cliente_telefono,
               c.dni AS cliente_dni, c.domicilio AS cliente_domicilio,
               COALESCE(
@@ -155,7 +157,7 @@ const entregarTodas = async (req, res) => {
     const { id } = req.params;
     await client.query('BEGIN');
     const result = await client.query(
-      `UPDATE ventas SET estado = 'Entregada'
+      `UPDATE ventas SET estado = 'Entregada', vehiculo_id = NULL
        WHERE vehiculo_id = $1 AND estado = 'Activa'
        RETURNING id`,
       [id]
@@ -172,17 +174,30 @@ const entregarTodas = async (req, res) => {
 };
 
 const liberar = async (req, res) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-    const result = await pool.query(
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE ventas SET estado = 'Entregada', vehiculo_id = NULL
+       WHERE vehiculo_id = $1 AND estado = 'Activa'`,
+      [id]
+    );
+    const result = await client.query(
       `UPDATE vehiculos SET estado = 'Disponible' WHERE id = $1 RETURNING *`,
       [id]
     );
-    if (!result.rows.length)
+    if (!result.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Vehículo no encontrado' });
+    }
+    await client.query('COMMIT');
     res.json(result.rows[0]);
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 };
 

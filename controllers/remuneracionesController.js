@@ -73,4 +73,21 @@ const pagar = async (req, res) => {
   }
 };
 
-module.exports = { listar, calcular, pagar };
+const crear = async (req, res) => {
+  try {
+    const { dni_empleado, periodo, fecha_desde, fecha_hasta, horas_trabajadas, tarifa_hora, total, horas_extra } = req.body;
+    if (!dni_empleado || !horas_trabajadas || !tarifa_hora || !total)
+      return res.status(400).json({ error: 'Campos obligatorios: dni_empleado, horas_trabajadas, tarifa_hora, total' });
+    const result = await pool.query(
+      `INSERT INTO remuneraciones (dni_empleado, periodo, horas_trabajadas, tarifa_hora, total)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [dni_empleado, periodo ?? `${fecha_desde} al ${fecha_hasta}`,
+       parseFloat(horas_trabajadas), parseFloat(tarifa_hora), parseFloat(total)]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = { listar, calcular, crear, pagar };

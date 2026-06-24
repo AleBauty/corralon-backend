@@ -55,14 +55,14 @@ const obtener = async (req, res) => {
 const crear = async (req, res) => {
   const client = await pool.connect();
   try {
-    const { dni_cliente, observaciones, items, forma_pago_1, monto_pago_1, forma_pago_2, monto_pago_2 } = req.body;
+    const { dni_cliente, observaciones, items, forma_pago_1, monto_pago_1, forma_pago_2, monto_pago_2, descuento } = req.body;
 
     if (!items || !items.length)
       return res.status(400).json({ error: 'El presupuesto debe tener al menos un producto' });
 
     await client.query('BEGIN');
 
-    let total = 0;
+    let subtotal = 0;
     for (const item of items) {
       const prod = await client.query(
         'SELECT precio_venta FROM productos WHERE codigo = $1',
@@ -74,17 +74,20 @@ const crear = async (req, res) => {
       }
       item.precio_unitario = item.precio_unitario ?? prod.rows[0].precio_venta;
       item.subtotal = Number(item.precio_unitario) * Number(item.cantidad);
-      total += item.subtotal;
+      subtotal += item.subtotal;
     }
+
+    const descuentoPct = parseFloat(descuento) || 0;
+    const total = subtotal * (1 - descuentoPct / 100);
 
     const result = await client.query(
       `INSERT INTO presupuestos
-         (dni_cliente, total, observaciones, fecha_vencimiento,
+         (dni_cliente, total, descuento, observaciones, fecha_vencimiento,
           forma_pago_1, monto_pago_1, forma_pago_2, monto_pago_2)
-       VALUES ($1, $2, $3, NOW() + INTERVAL '5 days', $4, $5, $6, $7)
+       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '5 days', $5, $6, $7, $8)
        RETURNING *`,
       [
-        dni_cliente ?? null, total.toFixed(2), observaciones ?? null,
+        dni_cliente ?? null, total.toFixed(2), descuentoPct, observaciones ?? null,
         forma_pago_1 ?? null,
         monto_pago_1 != null ? parseFloat(monto_pago_1) : total,
         forma_pago_2 ?? null,
@@ -191,7 +194,7 @@ const editar = async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
-    const { dni_cliente, observaciones, items, forma_pago_1, monto_pago_1, forma_pago_2, monto_pago_2 } = req.body;
+    const { dni_cliente, observaciones, items, forma_pago_1, monto_pago_1, forma_pago_2, monto_pago_2, descuento } = req.body;
 
     if (!items || !items.length)
       return res.status(400).json({ error: 'El presupuesto debe tener al menos un producto' });
@@ -204,7 +207,7 @@ const editar = async (req, res) => {
 
     await client.query('BEGIN');
 
-    let total = 0;
+    let subtotal = 0;
     for (const item of items) {
       const prod = await client.query(
         'SELECT precio_venta FROM productos WHERE codigo = $1',
@@ -216,16 +219,19 @@ const editar = async (req, res) => {
       }
       item.precio_unitario = item.precio_unitario ?? prod.rows[0].precio_venta;
       item.subtotal = Number(item.precio_unitario) * Number(item.cantidad);
-      total += item.subtotal;
+      subtotal += item.subtotal;
     }
+
+    const descuentoPct = parseFloat(descuento) || 0;
+    const total = subtotal * (1 - descuentoPct / 100);
 
     await client.query(
       `UPDATE presupuestos
-       SET dni_cliente = $1, observaciones = $2, total = $3,
-           forma_pago_1 = $4, monto_pago_1 = $5, forma_pago_2 = $6, monto_pago_2 = $7
-       WHERE id = $8`,
+       SET dni_cliente = $1, observaciones = $2, total = $3, descuento = $4,
+           forma_pago_1 = $5, monto_pago_1 = $6, forma_pago_2 = $7, monto_pago_2 = $8
+       WHERE id = $9`,
       [
-        dni_cliente ?? null, observaciones ?? null, total.toFixed(2),
+        dni_cliente ?? null, observaciones ?? null, total.toFixed(2), descuentoPct,
         forma_pago_1 ?? null,
         monto_pago_1 != null ? parseFloat(monto_pago_1) : total,
         forma_pago_2 ?? null,

@@ -111,4 +111,89 @@ const stockCritico = async (req, res) => {
   }
 };
 
-module.exports = { ventasPeriodo, productosMasVendidos, asistenciasPeriodo, stockCritico };
+const rentabilidadProductos = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT vi.producto_codigo,
+              COALESCE(p.nombre, vi.producto_codigo) AS nombre,
+              p.precio_costo,
+              p.porcentaje_ganancia,
+              ROUND(p.precio_costo * (1 + COALESCE(p.porcentaje_ganancia,0) / 100), 2) AS precio_venta,
+              SUM(vi.cantidad)  AS cantidad_vendida,
+              SUM(vi.subtotal)  AS ingresos_total,
+              ROUND(SUM(vi.subtotal) - SUM(vi.cantidad * COALESCE(p.precio_costo,0)), 2) AS ganancia_total
+       FROM venta_items vi
+       LEFT JOIN productos p ON vi.producto_codigo = p.codigo
+       GROUP BY vi.producto_codigo, p.nombre, p.precio_costo, p.porcentaje_ganancia
+       ORDER BY ganancia_total DESC NULLS LAST`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const rankingClientes = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT v.dni_cliente,
+              COALESCE(c.nombre_apellido, v.dni_cliente) AS cliente,
+              COUNT(v.id)   AS cantidad_compras,
+              SUM(v.total)  AS total_comprado
+       FROM ventas v
+       LEFT JOIN clientes c ON v.dni_cliente = c.dni
+       WHERE v.dni_cliente IS NOT NULL
+       GROUP BY v.dni_cliente, c.nombre_apellido
+       ORDER BY total_comprado DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const reporteDeudores = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT cc.dni_cliente,
+              COALESCE(c.nombre_apellido, cc.dni_cliente) AS cliente,
+              c.telefono,
+              c.limite_credito,
+              SUM(cc.saldo)  AS saldo_total,
+              MIN(cc.fecha)  AS deuda_mas_antigua
+       FROM cuenta_corriente cc
+       LEFT JOIN clientes c ON cc.dni_cliente = c.dni
+       WHERE cc.saldo > 0
+       GROUP BY cc.dni_cliente, c.nombre_apellido, c.telefono, c.limite_credito
+       ORDER BY saldo_total DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const stockAlertas = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT p.*,
+              cat.nombre AS categoria_nombre,
+              CASE
+                WHEN p.stock_actual <= p.stock_minimo                               THEN 'bajo'
+                WHEN p.stock_actual <= p.stock_minimo * 1.25 AND p.stock_minimo > 0 THEN 'proximo'
+              END AS nivel_alerta
+       FROM productos p
+       LEFT JOIN categorias_producto cat ON p.categoria_id = cat.id
+       WHERE p.stock_minimo > 0 AND p.stock_actual <= p.stock_minimo * 1.25
+       ORDER BY p.stock_actual ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = {
+  ventasPeriodo, productosMasVendidos, asistenciasPeriodo, stockCritico,
+  rentabilidadProductos, rankingClientes, reporteDeudores, stockAlertas,
+};
