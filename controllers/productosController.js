@@ -46,13 +46,41 @@ const obtener = async (req, res) => {
   }
 };
 
+const siguienteCodigo = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT codigo FROM productos
+       WHERE codigo ~ '^COD-[0-9]+$'
+       ORDER BY LENGTH(codigo) DESC, codigo DESC
+       LIMIT 1`
+    );
+    let next = 1;
+    if (result.rows.length > 0) {
+      const num = parseInt(result.rows[0].codigo.substring(4), 10);
+      if (!isNaN(num)) next = num + 1;
+    }
+    res.json({ codigo: `COD-${String(next).padStart(3, '0')}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const listarCategorias = async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM categorias_producto ORDER BY nombre');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 const crear = async (req, res) => {
   try {
     const {
       codigo, nombre, descripcion, categoria_id, marca,
       stock_actual, stock_minimo,
       proveedor_principal, proveedor_secundario,
-      precio_costo, porcentaje_ganancia,
+      precio_costo, porcentaje_ganancia, unidad_medida,
     } = req.body;
 
     const result = await pool.query(
@@ -60,14 +88,15 @@ const crear = async (req, res) => {
         (codigo, nombre, descripcion, categoria_id, marca,
          stock_actual, stock_minimo,
          proveedor_principal, proveedor_secundario,
-         precio_costo, porcentaje_ganancia)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         precio_costo, porcentaje_ganancia, unidad_medida)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
       [
         codigo, nombre, descripcion ?? null, categoria_id ?? null, marca ?? null,
         stock_actual ?? 0, stock_minimo ?? 0,
         proveedor_principal ?? null, proveedor_secundario ?? null,
         precio_costo, porcentaje_ganancia,
+        unidad_medida ?? 'unidades',
       ]
     );
     res.status(201).json(result.rows[0]);
@@ -85,7 +114,7 @@ const modificar = async (req, res) => {
       nombre, descripcion, categoria_id, marca,
       stock_minimo,
       proveedor_principal, proveedor_secundario,
-      precio_costo, porcentaje_ganancia,
+      precio_costo, porcentaje_ganancia, unidad_medida,
     } = req.body;
 
     const result = await pool.query(
@@ -98,14 +127,15 @@ const modificar = async (req, res) => {
         proveedor_principal  = COALESCE($6,  proveedor_principal),
         proveedor_secundario = COALESCE($7,  proveedor_secundario),
         precio_costo         = COALESCE($8,  precio_costo),
-        porcentaje_ganancia  = COALESCE($9,  porcentaje_ganancia)
-       WHERE codigo = $10
+        porcentaje_ganancia  = COALESCE($9,  porcentaje_ganancia),
+        unidad_medida        = COALESCE($10, unidad_medida)
+       WHERE codigo = $11
        RETURNING *`,
       [
         nombre, descripcion, categoria_id, marca,
         stock_minimo,
         proveedor_principal, proveedor_secundario,
-        precio_costo, porcentaje_ganancia,
+        precio_costo, porcentaje_ganancia, unidad_medida,
         codigo,
       ]
     );
@@ -137,4 +167,4 @@ const ingresoStock = async (req, res) => {
   }
 };
 
-module.exports = { listar, obtener, crear, modificar, ingresoStock };
+module.exports = { listar, obtener, crear, modificar, ingresoStock, siguienteCodigo, listarCategorias };

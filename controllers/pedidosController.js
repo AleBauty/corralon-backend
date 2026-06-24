@@ -83,6 +83,7 @@ const recibir = async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
+    const { items: recibidos } = req.body; // [{ id, cantidad_recibida }]
 
     const pedido = await client.query('SELECT * FROM pedidos WHERE id = $1', [id]);
     if (!pedido.rows.length)
@@ -97,17 +98,26 @@ const recibir = async (req, res) => {
       [id]
     );
 
+    let todosCompletos = true;
     for (const item of items.rows) {
-      await client.query(
-        'UPDATE productos SET stock_actual = stock_actual + $1 WHERE codigo = $2',
-        [item.cantidad, item.producto_codigo]
-      );
+      const rec = recibidos?.find(r => Number(r.id) === Number(item.id));
+      const cantRecibida = rec != null ? Math.max(0, parseFloat(rec.cantidad_recibida) || 0) : parseFloat(item.cantidad);
+
+      if (cantRecibida > 0) {
+        await client.query(
+          'UPDATE productos SET stock_actual = stock_actual + $1 WHERE codigo = $2',
+          [cantRecibida, item.producto_codigo]
+        );
+      }
+      if (cantRecibida < parseFloat(item.cantidad)) {
+        todosCompletos = false;
+      }
     }
 
+    const nuevoEstado = todosCompletos ? 'Recibido' : 'Parcialmente entregado';
     const updated = await client.query(
-      `UPDATE pedidos SET estado = 'Recibido', fecha_recepcion = NOW()
-       WHERE id = $1 RETURNING *`,
-      [id]
+      `UPDATE pedidos SET estado = $1, fecha_recepcion = NOW() WHERE id = $2 RETURNING *`,
+      [nuevoEstado, id]
     );
 
     await client.query('COMMIT');

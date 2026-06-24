@@ -55,7 +55,7 @@ const obtener = async (req, res) => {
 const crear = async (req, res) => {
   const client = await pool.connect();
   try {
-    const { dni_cliente, observaciones, items } = req.body;
+    const { dni_cliente, observaciones, items, forma_pago_1, monto_pago_1, forma_pago_2, monto_pago_2 } = req.body;
 
     if (!items || !items.length)
       return res.status(400).json({ error: 'El presupuesto debe tener al menos un producto' });
@@ -78,9 +78,18 @@ const crear = async (req, res) => {
     }
 
     const result = await client.query(
-      `INSERT INTO presupuestos (dni_cliente, total, observaciones, fecha_vencimiento)
-       VALUES ($1, $2, $3, NOW() + INTERVAL '5 days') RETURNING *`,
-      [dni_cliente ?? null, total.toFixed(2), observaciones ?? null]
+      `INSERT INTO presupuestos
+         (dni_cliente, total, observaciones, fecha_vencimiento,
+          forma_pago_1, monto_pago_1, forma_pago_2, monto_pago_2)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '5 days', $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        dni_cliente ?? null, total.toFixed(2), observaciones ?? null,
+        forma_pago_1 ?? null,
+        monto_pago_1 != null ? parseFloat(monto_pago_1) : total,
+        forma_pago_2 ?? null,
+        monto_pago_2 != null ? parseFloat(monto_pago_2) : null,
+      ]
     );
     const presup = result.rows[0];
 
@@ -182,7 +191,7 @@ const editar = async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
-    const { dni_cliente, observaciones, items } = req.body;
+    const { dni_cliente, observaciones, items, forma_pago_1, monto_pago_1, forma_pago_2, monto_pago_2 } = req.body;
 
     if (!items || !items.length)
       return res.status(400).json({ error: 'El presupuesto debe tener al menos un producto' });
@@ -211,8 +220,18 @@ const editar = async (req, res) => {
     }
 
     await client.query(
-      'UPDATE presupuestos SET dni_cliente = $1, observaciones = $2, total = $3 WHERE id = $4',
-      [dni_cliente ?? null, observaciones ?? null, total.toFixed(2), id]
+      `UPDATE presupuestos
+       SET dni_cliente = $1, observaciones = $2, total = $3,
+           forma_pago_1 = $4, monto_pago_1 = $5, forma_pago_2 = $6, monto_pago_2 = $7
+       WHERE id = $8`,
+      [
+        dni_cliente ?? null, observaciones ?? null, total.toFixed(2),
+        forma_pago_1 ?? null,
+        monto_pago_1 != null ? parseFloat(monto_pago_1) : total,
+        forma_pago_2 ?? null,
+        monto_pago_2 != null ? parseFloat(monto_pago_2) : null,
+        id,
+      ]
     );
 
     await client.query('DELETE FROM presupuesto_items WHERE presupuesto_id = $1', [id]);
